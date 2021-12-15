@@ -12,8 +12,8 @@ build:
 	go build -ldflags "-w -s" -o $(BINARY) .
 
 install: build
-	mkdir -p $(HOME)/.terraform.d/plugins
-	mv ./$(BINARY) $(HOME)/.terraform.d/plugins/$(BINARY)
+	mkdir -p $(HOME)/.terraform.d/plugins/registry.terraform.io/GtheSheep/dbt-cloud/${VERSION}/linux_amd64/
+	mv ./$(BINARY) $(HOME)/.terraform.d/plugins/registry.terraform.io/GtheSheep/dbt-cloud/${VERSION}/linux_amd64/$(BINARY)
 
 docs:
 	go get github.com/hashicorp/terraform-plugin-docs/cmd/tfplugindocs
