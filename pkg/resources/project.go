@@ -27,18 +27,22 @@ var projectSchema = map[string]*schema.Schema{
 		Computed:    true,
 		Description: "Connection ID",
 		ConflictsWith: []string{
-			dbt_cloud.TypeBigQueryProject,
+			dbt_cloud.TypeBigQueryConnection,
 		},
 	},
 	"repository_id": &schema.Schema{
 		Type:        schema.TypeInt,
 		Optional:    true,
+		Computed:    true,
 		Description: "Repository ID",
+		ConflictsWith: []string{
+			dbt_cloud.TypeGithubRepository,
+		},
 	},
-	dbt_cloud.TypeBigQueryProject: {
+	dbt_cloud.TypeBigQueryConnection: {
 		Type:        schema.TypeList,
 		Optional:    true,
-		Description: "Project using a BigQUery connection",
+		Description: "Project using a BigQuery connection",
 		ConflictsWith: []string{
 			"connection_id",
 		},
@@ -88,6 +92,24 @@ var projectSchema = map[string]*schema.Schema{
 			},
 		},
 	},
+	dbt_cloud.TypeGithubRepository: {
+		Type:        schema.TypeList,
+		Optional:    true,
+		Description: "Project using a Github Repository",
+		ConflictsWith: []string{
+			"repository_id",
+		},
+		MaxItems: 1,
+		Elem: &schema.Resource{
+			Schema: map[string]*schema.Schema{
+				"remote_url": {
+					Type:        schema.TypeString,
+					Required:    true,
+					Description: "Remote URL of the github repo",
+				},
+			},
+		},
+	},
 }
 
 func ResourceProject() *schema.Resource {
@@ -115,7 +137,6 @@ func resourceProjectRead(ctx context.Context, d *schema.ResourceData, m interfac
 	if err != nil {
 		return diag.FromErr(err)
 	}
-
 	if err := d.Set("name", project.Name); err != nil {
 		return diag.FromErr(err)
 	}
@@ -129,27 +150,6 @@ func resourceProjectRead(ctx context.Context, d *schema.ResourceData, m interfac
 		return diag.FromErr(err)
 	}
 
-	connection := project.Connection
-	if connection != nil {
-		switch connection.Type {
-		case dbt_cloud.TypeBigQueryProject:
-			val := map[string]interface{}{
-				"name": connection.Name,
-				"details": []map[string]interface{}{{
-					"retries":                     connection.Details.Retries,
-					"location":                    connection.Details.Location,
-					"timeout_seconds":             connection.Details.TimeoutSeconds,
-					"service_account_private_key": connection.Details.PrivateKeyID,
-				}},
-			}
-
-			if err := d.Set(dbt_cloud.TypeBigQueryProject, []interface{}{val}); err != nil {
-				return diag.FromErr(err)
-			}
-
-		}
-	}
-
 	return diags
 }
 
@@ -158,13 +158,15 @@ func resourceProjectCreate(ctx context.Context, d *schema.ResourceData, m interf
 
 	var diags diag.Diagnostics
 	var connection *dbt_cloud.Connection
+	var repository *dbt_cloud.Repository
 
+	followUpCall := false
 	name := d.Get("name").(string)
 	dbtProjectSubdirectory := d.Get("dbt_project_subdirectory").(string)
 	connectionID := d.Get("connection_id").(int)
 	repositoryID := d.Get("repository_id").(int)
 
-	if x := ResourceDataInterfaceMap(d, dbt_cloud.TypeBigQuery); len(x) != 0 {
+	if x := ResourceDataInterfaceMap(d, dbt_cloud.TypeBigQueryConnection); len(x) != 0 {
 		details := x["details"].(*schema.Set).List()[0].(map[string]interface{})
 		serviceAccountPrivateKey := details["service_account_private_key"].(string)
 
@@ -180,13 +182,49 @@ func resourceProjectCreate(ctx context.Context, d *schema.ResourceData, m interf
 
 		connection = &dbt_cloud.Connection{
 			Name:    x["name"].(string),
-			Type:    dbt_cloud.TypeBigQuery,
+			Type:    dbt_cloud.TypeBigQueryConnection,
 			Details: detailObject,
 		}
 
 	}
 
-	p, err := c.CreateProject(name, dbtProjectSubdirectory, connectionID, repositoryID, connection)
+	if x := ResourceDataInterfaceMap(d, dbt_cloud.TypeGithubRepository); len(x) != 0 {
+		repository = &dbt_cloud.Repository{
+			RemoteURL: x["remote_url"].(string),
+		}
+	}
+
+	p, err := c.CreateProject(name, dbtProjectSubdirectory, connectionID, repositoryID)
+
+	if connectionID == 0 && connection != nil {
+		connectionCreated, err := c.CreateConnection(connection, *p.ID)
+		if err != nil {
+			return diag.FromErr(err)
+		}
+		followUpCall = true
+		p.ConnectionID = connectionCreated.ID
+	}
+
+	if repositoryID == 0 && repository != nil {
+		repositoryCreated, err := c.CreateRepository(repository, *p.ID)
+
+		if err != nil {
+			return diag.FromErr(err)
+		}
+		followUpCall = true
+		p.RepositoryID = repositoryCreated.ID
+	}
+
+	if followUpCall {
+		returnedProject, err := c.UpdateProject(strconv.Itoa(*p.ID), *p)
+
+		if err != nil {
+			return diag.FromErr(err)
+		}
+
+		p = returnedProject
+	}
+
 	if err != nil {
 		return diag.FromErr(err)
 	}
@@ -201,8 +239,12 @@ func resourceProjectCreate(ctx context.Context, d *schema.ResourceData, m interf
 func resourceProjectUpdate(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
 	c := m.(*dbt_cloud.Client)
 	projectID := d.Id()
+	projectIDInt, err := strconv.Atoi(projectID)
+	if err != nil {
+		return diag.FromErr(err)
+	}
 
-	if d.HasChange("name") || d.HasChange("dbt_project_subdirectory") || d.HasChange("connection_id") || d.HasChange("repository_id") || d.HasChange(dbt_cloud.TypeBigQueryProject) {
+	if d.HasChange("name") || d.HasChange("dbt_project_subdirectory") || d.HasChange("connection_id") || d.HasChange("repository_id") || d.HasChange(dbt_cloud.TypeBigQueryConnection) || d.HasChange(dbt_cloud.TypeGithubRepository) {
 		project, err := c.GetProject(projectID)
 		if err != nil {
 			return diag.FromErr(err)
@@ -225,22 +267,76 @@ func resourceProjectUpdate(ctx context.Context, d *schema.ResourceData, m interf
 			project.RepositoryID = &repositoryID
 		}
 
-		if d.HasChange(dbt_cloud.TypeBigQueryProject) {
-			connection := ResourceDataInterfaceMap(d, dbt_cloud.TypeBigQuery)
-			details := connection["details"].(*schema.Set).List()[0].(map[string]interface{})
-			serviceAccountPrivateKey := details["service_account_private_key"].(string)
+		if d.HasChange(dbt_cloud.TypeBigQueryConnection) {
+			if x := ResourceDataInterfaceMap(d, dbt_cloud.TypeBigQueryConnection); len(x) != 0 {
+				details := x["details"].(*schema.Set).List()[0].(map[string]interface{})
+				serviceAccountPrivateKey := details["service_account_private_key"].(string)
 
-			detailObject := dbt_cloud.ConnectionDetails{}
-			err := json.Unmarshal([]byte(serviceAccountPrivateKey), &detailObject)
-			if err != nil {
-				return diag.FromErr(err)
+				detailObject := dbt_cloud.ConnectionDetails{}
+				err := json.Unmarshal([]byte(serviceAccountPrivateKey), &detailObject)
+				if err != nil {
+					return diag.FromErr(err)
+				}
+
+				detailObject.Retries = details["retries"].(int)
+				detailObject.Location = details["location"].(string)
+				detailObject.TimeoutSeconds = details["timeout_seconds"].(int)
+				id := d.Get("connection_id").(int)
+				connection := dbt_cloud.Connection{
+					Details: detailObject,
+					Name:    x["name"].(string),
+					Type:    dbt_cloud.TypeBigQueryConnection,
+				}
+
+				var updatedConnection *dbt_cloud.Connection
+
+				if id == 0 {
+					updatedConnection, err = c.CreateConnection(&connection, projectIDInt)
+				} else {
+					connection.ID = &id
+					updatedConnection, err = c.UpdateConnection(&connection, projectIDInt)
+				}
+				if err != nil {
+					return diag.FromErr(err)
+				}
+
+				project.ConnectionID = updatedConnection.ID
+
+			} else if project.ConnectionID != nil {
+				err = c.DeleteConnection(*project.ConnectionID, projectIDInt)
+				if err != nil {
+					return diag.FromErr(err)
+				}
 			}
 
-			detailObject.Retries = details["retries"].(int)
-			detailObject.Location = details["location"].(string)
-			detailObject.TimeoutSeconds = details["timeout_seconds"].(int)
-			project.Connection.Name = connection["name"].(string)
-			project.Connection.Details = detailObject
+		}
+
+		if d.HasChange(dbt_cloud.TypeGithubRepository) {
+			if x := ResourceDataInterfaceMap(d, dbt_cloud.TypeGithubRepository); len(x) != 0 {
+				id := d.Get("repository_id").(int)
+				repository := dbt_cloud.Repository{
+					RemoteURL: x["remote_url"].(string),
+				}
+
+				var updatedRepository *dbt_cloud.Repository
+				if id == 0 {
+					updatedRepository, err = c.CreateRepository(&repository, projectIDInt)
+				} else {
+					repository.ID = &id
+					updatedRepository, err = c.UpdateRepository(&repository, projectIDInt)
+				}
+				if err != nil {
+					return diag.FromErr(err)
+				}
+
+				project.RepositoryID = updatedRepository.ID
+			} else if project.RepositoryID != nil {
+				err = c.DeleteRepository(*project.RepositoryID, projectIDInt)
+				if err != nil {
+					return diag.FromErr(err)
+				}
+			}
+
 		}
 
 		_, err = c.UpdateProject(projectID, *project)
