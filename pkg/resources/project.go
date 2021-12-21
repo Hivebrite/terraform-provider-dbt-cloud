@@ -3,7 +3,6 @@ package resources
 import (
 	"context"
 	"encoding/json"
-	"log"
 	"strconv"
 
 	"github.com/gthesheep/terraform-provider-dbt-cloud/pkg/dbt_cloud"
@@ -132,7 +131,6 @@ func resourceProjectRead(ctx context.Context, d *schema.ResourceData, m interfac
 
 	connection := project.Connection
 	if connection != nil {
-		log.Printf("CONNECTION IS NOT EMPTY, %s", connection.Type)
 		switch connection.Type {
 		case dbt_cloud.TypeBigQueryProject:
 			val := map[string]interface{}{
@@ -204,7 +202,7 @@ func resourceProjectUpdate(ctx context.Context, d *schema.ResourceData, m interf
 	c := m.(*dbt_cloud.Client)
 	projectID := d.Id()
 
-	if d.HasChange("name") || d.HasChange("dbt_project_subdirectory") || d.HasChange("connection_id") || d.HasChange("repository_id") {
+	if d.HasChange("name") || d.HasChange("dbt_project_subdirectory") || d.HasChange("connection_id") || d.HasChange("repository_id") || d.HasChange(dbt_cloud.TypeBigQueryProject) {
 		project, err := c.GetProject(projectID)
 		if err != nil {
 			return diag.FromErr(err)
@@ -225,6 +223,24 @@ func resourceProjectUpdate(ctx context.Context, d *schema.ResourceData, m interf
 		if d.HasChange("repository_id") {
 			repositoryID := d.Get("repository_id").(int)
 			project.RepositoryID = &repositoryID
+		}
+
+		if d.HasChange(dbt_cloud.TypeBigQueryProject) {
+			connection := ResourceDataInterfaceMap(d, dbt_cloud.TypeBigQuery)
+			details := connection["details"].(*schema.Set).List()[0].(map[string]interface{})
+			serviceAccountPrivateKey := details["service_account_private_key"].(string)
+
+			detailObject := dbt_cloud.ConnectionDetails{}
+			err := json.Unmarshal([]byte(serviceAccountPrivateKey), &detailObject)
+			if err != nil {
+				return diag.FromErr(err)
+			}
+
+			detailObject.Retries = details["retries"].(int)
+			detailObject.Location = details["location"].(string)
+			detailObject.TimeoutSeconds = details["timeout_seconds"].(int)
+			project.Connection.Name = connection["name"].(string)
+			project.Connection.Details = detailObject
 		}
 
 		_, err = c.UpdateProject(projectID, *project)
