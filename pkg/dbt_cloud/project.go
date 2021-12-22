@@ -69,7 +69,7 @@ func (c *Client) CreateProject(name string, dbtProjectSubdirectory string, conne
 	if err != nil {
 		return nil, err
 	}
-	log.Println(string(newProjectData))
+	log.Println("Creating the project: %s", string(newProjectData))
 
 	req, err := http.NewRequest("POST", fmt.Sprintf("%s/v3/accounts/%s/projects/", c.HostURL, strconv.Itoa(c.AccountID)), strings.NewReader(string(newProjectData)))
 	if err != nil {
@@ -86,7 +86,6 @@ func (c *Client) CreateProject(name string, dbtProjectSubdirectory string, conne
 	if err != nil {
 		return nil, err
 	}
-
 	return &projectResponse.Data, nil
 }
 
@@ -95,6 +94,7 @@ func (c *Client) UpdateProject(projectID string, project Project) (*Project, err
 	if err != nil {
 		return nil, err
 	}
+	log.Println("Updating the project: %s", string(projectData))
 
 	req, err := http.NewRequest("POST", fmt.Sprintf("%s/v3/accounts/%s/projects/%s/", c.HostURL, strconv.Itoa(c.AccountID), projectID), strings.NewReader(string(projectData)))
 	if err != nil {
