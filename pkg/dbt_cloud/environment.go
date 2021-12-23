@@ -29,7 +29,6 @@ type Environment struct {
 	Updated_At                   *string `json:"updated_at"`
 	Project                      Project `json:"project"`
 	Jobs                         *string `json:"jobs"`
-	Credentials                  *string `json:"credentials"`
 	Custom_Environment_Variables *string `json:"custom_environment_variables"`
 }
 

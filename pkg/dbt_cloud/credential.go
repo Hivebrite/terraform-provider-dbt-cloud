@@ -3,12 +3,14 @@ package dbt_cloud
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"strings"
 )
 
 const (
-	TypeBigQueryCredential = "bigquery"
+	TypeBigQueryCredential  = "bigquery"
+	TypeSnowflakeCredential = "snowflake"
 )
 
 type CredentialListResponse struct {
@@ -28,9 +30,9 @@ type Credential struct {
 	Type       string `json:"type"`
 	State      int    `json:"state"`
 	Threads    int    `json:"threads"`
-	User       string `json:"user"`
-	Password   string `json:"password"`
-	Auth_Type  string `json:"auth_type"`
+	User       string `json:"user,omitempty"`
+	Password   string `json:"password,omitempty"`
+	Auth_Type  string `json:"auth_type,omitempty"`
 	Schema     string `json:"schema"`
 }
 
@@ -53,6 +55,9 @@ func (c *Client) GetCredential(projectId int, credentialId int) (*Credential, er
 
 	for i, credential := range credentialListResponse.Data {
 		if *credential.ID == credentialId {
+			credential := credentialListResponse.Data[i]
+			log.Println("Credential READ: %s", credential)
+
 			return &credentialListResponse.Data[i], nil
 		}
 	}
@@ -94,6 +99,7 @@ func (c *Client) UpdateCredential(projectId int, credentialId int, credential Cr
 	if err != nil {
 		return nil, err
 	}
+	log.Println("Credential POST: %s", string(credentialData))
 
 	req, err := http.NewRequest("POST", fmt.Sprintf("%s/v3/accounts/%d/projects/%d/credentials/%d", HostURL, c.AccountID, projectId, credentialId), strings.NewReader(string(credentialData)))
 	if err != nil {

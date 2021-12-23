@@ -107,6 +107,11 @@ var projectSchema = map[string]*schema.Schema{
 					Required:    true,
 					Description: "Remote URL of the github repo",
 				},
+				"installation_id": {
+					Type:        schema.TypeInt,
+					Optional:    true,
+					Description: "using GithubApp to integrate",
+				},
 			},
 		},
 	},
@@ -189,8 +194,10 @@ func resourceProjectCreate(ctx context.Context, d *schema.ResourceData, m interf
 	}
 
 	if x := ResourceDataInterfaceMap(d, dbt_cloud.TypeGithubRepository); len(x) != 0 {
+		installationIDp := x["installation_id"].(int)
 		repository = &dbt_cloud.Repository{
-			RemoteURL: x["remote_url"].(string),
+			RemoteURL:            x["remote_url"].(string),
+			GithubInstallationID: &installationIDp,
 		}
 	}
 
@@ -314,8 +321,10 @@ func resourceProjectUpdate(ctx context.Context, d *schema.ResourceData, m interf
 		if d.HasChange(dbt_cloud.TypeGithubRepository) {
 			if x := ResourceDataInterfaceMap(d, dbt_cloud.TypeGithubRepository); len(x) != 0 {
 				id := d.Get("repository_id").(int)
+				installationIDp := x["installation_id"].(int)
 				repository := dbt_cloud.Repository{
-					RemoteURL: x["remote_url"].(string),
+					RemoteURL:            x["remote_url"].(string),
+					GithubInstallationID: &installationIDp,
 				}
 
 				var updatedRepository *dbt_cloud.Repository

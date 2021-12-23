@@ -145,6 +145,9 @@ func resourceEnvironmentRead(ctx context.Context, d *schema.ResourceData, m inte
 	if err := d.Set("name", environment.Name); err != nil {
 		return diag.FromErr(err)
 	}
+	if err := d.Set("credential_id", environment.Credential_Id); err != nil {
+		return diag.FromErr(err)
+	}
 	if err := d.Set("dbt_version", environment.Dbt_Version); err != nil {
 		return diag.FromErr(err)
 	}
@@ -179,14 +182,22 @@ func resourceEnvironmentUpdate(ctx context.Context, d *schema.ResourceData, m in
 
 	// TODO: add more changes here
 
-	if d.HasChange("name") {
+	if d.HasChange("name") || d.HasChange("credential_id") {
 		environment, err := c.GetEnvironment(projectId, environmentId)
 		if err != nil {
 			return diag.FromErr(err)
 		}
 
-		name := d.Get("name").(string)
-		environment.Name = name
+		if d.HasChange("name") {
+			name := d.Get("name").(string)
+			environment.Name = name
+		}
+
+		if d.HasChange("credential_id") {
+			credentialId := d.Get("credential_id").(int)
+			environment.Credential_Id = &credentialId
+		}
+
 		_, err = c.UpdateEnvironment(projectId, environmentId, *environment)
 		if err != nil {
 			return diag.FromErr(err)

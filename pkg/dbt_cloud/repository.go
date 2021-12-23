@@ -19,11 +19,12 @@ type RepositoryResponse struct {
 }
 
 type Repository struct {
-	ID        *int   `json:"id,omitempty"`
-	AccountID int    `json:"account_id"`
-	ProjectID int    `json:"project_id"`
-	RemoteURL string `json:"remote_url"`
-	State     int    `json:"state"`
+	ID                   *int   `json:"id,omitempty"`
+	AccountID            int    `json:"account_id"`
+	ProjectID            int    `json:"project_id"`
+	GithubInstallationID *int   `json:"github_installation_id,omitempty"`
+	RemoteURL            string `json:"remote_url"`
+	State                int    `json:"state"`
 }
 
 func (c *Client) GetRepository(repositoryID string) (*Repository, error) {
